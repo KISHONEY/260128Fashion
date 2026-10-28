@@ -31,6 +31,13 @@ export function CommentForm({
   onDone?: () => void;
   placeholder?: string;
 }) {
+  const [body, setBody] = useState("");
+  const [mentioned, setMentioned] = useState<Member[]>([]);
+  const [images, setImages] = useState<AttachmentDraft[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [query, setQuery] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   // 등록에 성공하면 입력칸을 비움
   const [state, action] = useActionState(async (prev: ActionState, formData: FormData) => {
     const result = await createComment(prev, formData);
@@ -42,13 +49,6 @@ export function CommentForm({
     }
     return result;
   }, undefined);
-  const [body, setBody] = useState("");
-  const [mentioned, setMentioned] = useState<Member[]>([]);
-  const [images, setImages] = useState<AttachmentDraft[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
-  const [query, setQuery] = useState<string | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const listId = useId();

@@ -45,11 +45,6 @@ export function MobileNav({
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // 페이지를 이동하면 메뉴를 닫음
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
   // 메뉴가 열려 있을 때 뒤 화면 스크롤 막기 + ESC 로 닫기
   useEffect(() => {
     if (!open) return;
@@ -104,6 +99,7 @@ export function MobileNav({
                 key={item.href}
                 href={item.href}
                 aria-current={isActive(pathname, item.href) ? "page" : undefined}
+                onClick={() => setOpen(false)}
                 className="border-b border-line py-4 flex items-baseline gap-4"
               >
                 <span className="text-xs text-accent w-6">{String(i + 1).padStart(2, "0")}</span>
@@ -113,7 +109,7 @@ export function MobileNav({
             ))}
           </nav>
           <div className="mt-auto pt-10 flex items-center justify-between text-sm">
-            <Link href="/settings" className="text-muted">
+            <Link href="/settings" onClick={() => setOpen(false)} className="text-muted">
               {userName} · 내 정보
             </Link>
             <form action="/auth/signout" method="post">
