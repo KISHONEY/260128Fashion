@@ -6,9 +6,8 @@
 // - 이미지는 서버가 직접 전달(브라우저 캐시는 개인용으로만 허용)
 // - PDF/문서는 60초 뒤 만료되는 일회용 주소로 넘겨 줍니다.
 import { NextResponse, type NextRequest } from "next/server";
+import { BUCKET } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
-
-const BUCKET = "archive";
 
 export async function GET(request: NextRequest, ctx: RouteContext<"/files/[...path]">) {
   const { path: segments } = await ctx.params;

@@ -127,3 +127,17 @@ export type CommentTarget =
 
 // 서버 액션 결과 (폼에 오류/성공 메시지를 보여 주기 위함)
 export type ActionState = { error?: string; success?: string } | undefined;
+
+// 폼에서 서버로 넘기는 첨부 정보 (attachments 행과 같은 모양)
+export type AttachmentDraft = {
+  id?: string; // 이미 저장된 첨부라면 DB id
+  kind: AttachmentKind;
+  storage_path: string | null;
+  thumb_path: string | null;
+  url: string | null;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  width: number | null;
+  height: number | null;
+};

@@ -3,6 +3,9 @@ import type { AttachmentKind, CourseAudience, ResearchStatus, UserRole } from ".
 
 export const SITE_NAME = "연구 아카이브";
 
+// Supabase Storage 버킷 이름 (schema.sql 과 동일해야 함)
+export const BUCKET = "archive";
+
 export const STATUS_LABEL: Record<ResearchStatus, string> = {
   in_progress: "진행중",
   completed: "완료",
