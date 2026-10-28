@@ -1,17 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, FormMessage, btn, inputCls } from "@/components/ui";
 import type { LoungePost } from "@/lib/types";
 import { saveLoungePost } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 export function LoungeForm({ post }: { post?: LoungePost }) {
-  const [state, action] = useActionState(saveLoungePost, undefined);
+  const [state, onSubmit, pending] = useFormAction(saveLoungePost);
   return (
-    <form action={action} className="flex flex-col gap-8 max-w-3xl">
+    <form onSubmit={onSubmit} className="flex flex-col gap-8 max-w-3xl">
       {post && <input type="hidden" name="id" value={post.id} />}
       <Field label="제목" htmlFor="title" required>
         <input
@@ -28,7 +28,7 @@ export function LoungeForm({ post }: { post?: LoungePost }) {
       </Field>
       <FormMessage state={state} />
       <div className="flex gap-2">
-        <SubmitButton pendingText="저장 중…">{post ? "수정 내용 저장" : "글 올리기"}</SubmitButton>
+        <SubmitButton pending={pending} pendingText="저장 중…">{post ? "수정 내용 저장" : "글 올리기"}</SubmitButton>
         <Link href={post ? `/lounge/${post.id}` : "/lounge"} className={btn.ghost}>
           취소
         </Link>

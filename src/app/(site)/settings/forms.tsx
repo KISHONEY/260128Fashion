@@ -1,14 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, FormMessage, inputCls } from "@/components/ui";
 import { changePassword, updateProfile } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 export function ProfileForm({ name, emailNotify }: { name: string; emailNotify: boolean }) {
-  const [state, action] = useActionState(updateProfile, undefined);
+  const [state, onSubmit, pending] = useFormAction(updateProfile);
   return (
-    <form action={action} className="flex flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex flex-col gap-6">
       <Field label="이름" htmlFor="display_name" required hint="멘션(@이름)에 사용됩니다.">
         <input id="display_name" name="display_name" required maxLength={40} defaultValue={name} className={inputCls} />
       </Field>
@@ -20,15 +20,15 @@ export function ProfileForm({ name, emailNotify }: { name: string; emailNotify: 
         </span>
       </label>
       <FormMessage state={state} />
-      <SubmitButton className="self-start">저장</SubmitButton>
+      <SubmitButton pending={pending} className="self-start">저장</SubmitButton>
     </form>
   );
 }
 
 export function PasswordForm() {
-  const [state, action] = useActionState(changePassword, undefined);
+  const [state, onSubmit, pending] = useFormAction(changePassword);
   return (
-    <form action={action} className="flex flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex flex-col gap-6">
       <Field label="새 비밀번호" htmlFor="password" required hint="8자 이상">
         <input id="password" name="password" type="password" minLength={8} required autoComplete="new-password" className={inputCls} />
       </Field>
@@ -36,7 +36,7 @@ export function PasswordForm() {
         <input id="password2" name="password2" type="password" minLength={8} required autoComplete="new-password" className={inputCls} />
       </Field>
       <FormMessage state={state} />
-      <SubmitButton className="self-start" variant="secondary">
+      <SubmitButton pending={pending} className="self-start" variant="secondary">
         비밀번호 변경
       </SubmitButton>
     </form>

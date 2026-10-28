@@ -1,9 +1,10 @@
 "use client";
 
 // 댓글 하나 (작성자, 시간, 본문, 이미지, 답글/수정/삭제/고정 버튼)
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { deleteComment, togglePin, updateComment } from "@/app/(site)/_actions/comments";
 import { fileUrl, formatDateTime, timeAgo } from "@/lib/format";
+import { useFormAction } from "@/lib/use-form-action";
 import type { ActionState, CommentTarget } from "@/lib/types";
 import { ConfirmButton } from "../confirm-button";
 import { Markdown } from "../markdown";
@@ -70,11 +71,11 @@ function CommentBody({
   onReply?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [state, action] = useActionState(async (prev: ActionState, fd: FormData) => {
+  const [state, onSubmit, pending] = useFormAction(async (prev: ActionState, fd: FormData) => {
     const r = await updateComment(prev, fd);
     if (r?.success) setEditing(false);
     return r;
-  }, undefined);
+  });
 
   const isMine = comment.author?.id === me.id;
   const isAdmin = me.role === "admin";
@@ -104,7 +105,7 @@ function CommentBody({
 
       <div className="mt-3 md:pl-11">
         {editing ? (
-          <form action={action} className="flex flex-col gap-2">
+          <form onSubmit={onSubmit} className="flex flex-col gap-2">
             <input type="hidden" name="id" value={comment.id} />
             <input type="hidden" name="path" value={path} />
             <label htmlFor={`edit-${comment.id}`} className="sr-only">
@@ -124,7 +125,7 @@ function CommentBody({
               <button type="button" onClick={() => setEditing(false)} className={btn.ghost}>
                 취소
               </button>
-              <SubmitButton className="h-9 px-4">저장</SubmitButton>
+              <SubmitButton pending={pending} className="h-9 px-4">저장</SubmitButton>
             </div>
           </form>
         ) : (

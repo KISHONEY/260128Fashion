@@ -53,6 +53,14 @@ body {
   outline-offset: 2px;
 }
 
+/* 제목 세리프의 숫자를 반듯한 모양으로 (Cormorant 기본 숫자는 1 이 I 처럼 보임) */
+.font-serif,
+.prose-editorial h1,
+.prose-editorial h2,
+.prose-editorial h3 {
+  font-variant-numeric: lining-nums;
+}
+
 /* 소제목용 작은 대문자 스타일 */
 .eyebrow {
   font-size: 0.72rem;

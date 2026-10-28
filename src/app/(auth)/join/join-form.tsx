@@ -1,14 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, FormMessage, inputCls } from "@/components/ui";
 import { joinWithCode } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 export function JoinForm({ code }: { code: string }) {
-  const [state, action] = useActionState(joinWithCode, undefined);
+  const [state, onSubmit, pending] = useFormAction(joinWithCode);
   return (
-    <form action={action} className="flex flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex flex-col gap-6">
       <Field label="초대 코드" htmlFor="code" required>
         <input
           id="code"
@@ -48,7 +48,7 @@ export function JoinForm({ code }: { code: string }) {
         />
       </Field>
       <FormMessage state={state} />
-      <SubmitButton pendingText="가입 중…" className="w-full">
+      <SubmitButton pending={pending} pendingText="가입 중…" className="w-full">
         가입하고 시작하기
       </SubmitButton>
       <p className="text-xs text-muted leading-relaxed">

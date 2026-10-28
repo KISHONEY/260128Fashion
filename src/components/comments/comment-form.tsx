@@ -4,10 +4,11 @@
 // - @를 입력하면 멤버 목록이 떠서 멘션할 사람을 고를 수 있음 (↑↓ 선택, Enter 확정)
 // - 이미지 첨부 (자동 리사이즈)
 // - 마크다운 지원
-import { useActionState, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { createComment } from "@/app/(site)/_actions/comments";
 import { ACCEPT_IMAGES, MAX_COMMENT_IMAGES } from "@/lib/constants";
 import { fileUrl } from "@/lib/format";
+import { useFormAction } from "@/lib/use-form-action";
 import type { ActionState, AttachmentDraft, CommentTarget } from "@/lib/types";
 import { uploadAttachment } from "@/lib/upload-client";
 import { SubmitButton } from "../submit-button";
@@ -39,7 +40,7 @@ export function CommentForm({
   const [query, setQuery] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   // 등록에 성공하면 입력칸을 비움
-  const [state, action] = useActionState(async (prev: ActionState, formData: FormData) => {
+  const [state, onSubmit, pending] = useFormAction(async (prev: ActionState, formData: FormData) => {
     const result = await createComment(prev, formData);
     if (result?.success) {
       setBody("");
@@ -48,7 +49,7 @@ export function CommentForm({
       onDone?.();
     }
     return result;
-  }, undefined);
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const listId = useId();
@@ -104,7 +105,7 @@ export function CommentForm({
   }
 
   return (
-    <form ref={formRef} action={action} className="flex flex-col gap-3">
+    <form ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-3">
       <input type="hidden" name="target_type" value={target.type} />
       <input type="hidden" name="target_id" value={target.id} />
       {parentId && <input type="hidden" name="parent_id" value={parentId} />}
@@ -228,7 +229,7 @@ export function CommentForm({
               취소
             </button>
           )}
-          <SubmitButton disabled={uploading || !body.trim()} pendingText="등록 중…" className="h-10 px-4">
+          <SubmitButton pending={pending} disabled={uploading || !body.trim()} pendingText="등록 중…" className="h-10 px-4">
             {parentId ? "답글 등록" : "댓글 등록"}
           </SubmitButton>
         </div>

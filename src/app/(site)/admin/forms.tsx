@@ -1,7 +1,7 @@
 "use client";
 
 // 관리 화면에서 쓰는 입력 폼들
-import { useActionState, useId, useState } from "react";
+import { useId, useState } from "react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, FormMessage, boxInputCls, btn } from "@/components/ui";
@@ -18,13 +18,14 @@ import {
   saveCategory,
   saveSiteSettings,
 } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 // ---------------- 멤버 ----------------
 
 export function RoleForm({ id, role, disabled }: { id: string; role: UserRole; disabled?: boolean }) {
-  const [state, action] = useActionState(changeRole, undefined);
+  const [state, onSubmit, pending] = useFormAction(changeRole);
   return (
-    <form action={action} className="flex items-center gap-2">
+    <form onSubmit={onSubmit} className="flex items-center gap-2">
       <input type="hidden" name="id" value={id} />
       <label className="sr-only" htmlFor={`role-${id}`}>
         권한
@@ -33,7 +34,7 @@ export function RoleForm({ id, role, disabled }: { id: string; role: UserRole; d
         id={`role-${id}`}
         name="role"
         defaultValue={role}
-        disabled={disabled}
+        disabled={disabled || pending}
         onChange={(e) => e.currentTarget.form?.requestSubmit()}
         className={`${boxInputCls} !py-1.5 !text-sm w-auto`}
       >
@@ -49,9 +50,9 @@ export function RoleForm({ id, role, disabled }: { id: string; role: UserRole; d
 }
 
 export function InviteCodeForm() {
-  const [state, action] = useActionState(createInviteCode, undefined);
+  const [state, onSubmit, pending] = useFormAction(createInviteCode);
   return (
-    <form action={action} className="grid gap-5 sm:grid-cols-2">
+    <form onSubmit={onSubmit} className="grid gap-5 sm:grid-cols-2">
       <Field label="권한" htmlFor="code-role">
         <select id="code-role" name="role" defaultValue="member" className={boxInputCls}>
           <option value="member">{ROLE_LABEL.member}</option>
@@ -69,16 +70,16 @@ export function InviteCodeForm() {
       </Field>
       <div className="sm:col-span-2 flex flex-col gap-3">
         <FormMessage state={state} />
-        <SubmitButton className="self-start">초대 코드 만들기</SubmitButton>
+        <SubmitButton pending={pending} className="self-start">초대 코드 만들기</SubmitButton>
       </div>
     </form>
   );
 }
 
 export function InviteEmailForm() {
-  const [state, action] = useActionState(inviteByEmail, undefined);
+  const [state, onSubmit, pending] = useFormAction(inviteByEmail);
   return (
-    <form action={action} className="grid gap-5 sm:grid-cols-2">
+    <form onSubmit={onSubmit} className="grid gap-5 sm:grid-cols-2">
       <Field label="이메일" htmlFor="invite-email" required>
         <input id="invite-email" name="email" type="email" required className={boxInputCls} />
       </Field>
@@ -93,7 +94,7 @@ export function InviteEmailForm() {
       </Field>
       <div className="sm:col-span-2 flex flex-col gap-3">
         <FormMessage state={state} />
-        <SubmitButton className="self-start" variant="secondary" pendingText="보내는 중…">
+        <SubmitButton pending={pending} className="self-start" variant="secondary" pendingText="보내는 중…">
           초대 메일 보내기
         </SubmitButton>
       </div>
@@ -126,10 +127,10 @@ export function CopyButton({ text, label = "링크 복사" }: { text: string; la
 // ---------------- 카테고리 · 태그 ----------------
 
 export function CategoryForm({ category }: { category?: Category }) {
-  const [state, action] = useActionState(saveCategory, undefined);
+  const [state, onSubmit, pending] = useFormAction(saveCategory);
   const uid = useId();
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       {category && <input type="hidden" name="id" value={category.id} />}
       <label className="sr-only" htmlFor={`${uid}-name`}>
         카테고리 이름
@@ -154,7 +155,7 @@ export function CategoryForm({ category }: { category?: Category }) {
         title="표시 순서 (작을수록 앞)"
         className={`${boxInputCls} !w-20`}
       />
-      <SubmitButton variant={category ? "small" : "primary"} className={category ? "" : "h-11"}>
+      <SubmitButton pending={pending} variant={category ? "small" : "primary"} className={category ? "" : "h-11"}>
         {category ? "저장" : "추가"}
       </SubmitButton>
       {(state?.error || state?.success) && (
@@ -167,10 +168,10 @@ export function CategoryForm({ category }: { category?: Category }) {
 }
 
 export function TagForm({ tag }: { tag?: { id: string; name: string } }) {
-  const [state, action] = useActionState(tag ? renameTag : createTag, undefined);
+  const [state, onSubmit, pending] = useFormAction(tag ? renameTag : createTag);
   const uid = useId();
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       {tag && <input type="hidden" name="id" value={tag.id} />}
       <label className="sr-only" htmlFor={`${uid}-tag`}>
         태그 이름
@@ -184,7 +185,7 @@ export function TagForm({ tag }: { tag?: { id: string; name: string } }) {
         placeholder="새 태그"
         className={`${boxInputCls} !w-auto flex-1 min-w-32`}
       />
-      <SubmitButton variant={tag ? "small" : "primary"} className={tag ? "" : "h-11"}>
+      <SubmitButton pending={pending} variant={tag ? "small" : "primary"} className={tag ? "" : "h-11"}>
         {tag ? "저장" : "추가"}
       </SubmitButton>
       {(state?.error || state?.success) && (
@@ -199,7 +200,7 @@ export function TagForm({ tag }: { tag?: { id: string; name: string } }) {
 // ---------------- 교수 소개 ----------------
 
 export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
-  const [state, action] = useActionState(saveSiteSettings, undefined);
+  const [state, onSubmit, pending] = useFormAction(saveSiteSettings);
   const [photo, setPhoto] = useState(settings.photo_path ?? "");
   const [uploading, setUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -218,7 +219,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   }
 
   return (
-    <form action={action} className="grid gap-10 lg:grid-cols-[16rem_1fr] lg:gap-14">
+    <form onSubmit={onSubmit} className="grid gap-10 lg:grid-cols-[16rem_1fr] lg:gap-14">
       <input type="hidden" name="photo_path" value={photo} />
       <div className="flex flex-col gap-3">
         <p className="eyebrow">사진</p>
@@ -290,7 +291,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           </Field>
         </div>
         <FormMessage state={state} />
-        <SubmitButton disabled={uploading} className="self-start">
+        <SubmitButton pending={pending} disabled={uploading} className="self-start">
           저장
         </SubmitButton>
       </div>

@@ -13,6 +13,7 @@ export function SubmitButton({
   disabled,
   name,
   value,
+  pending: pendingProp,
 }: {
   children: ReactNode;
   pendingText?: string;
@@ -21,8 +22,10 @@ export function SubmitButton({
   disabled?: boolean;
   name?: string;
   value?: string;
+  pending?: boolean; // useFormAction 으로 제출하는 폼은 직접 전달
 }) {
-  const { pending } = useFormStatus();
+  const status = useFormStatus();
+  const pending = pendingProp ?? status.pending;
   return (
     <button
       type="submit"

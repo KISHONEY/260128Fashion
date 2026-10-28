@@ -2,7 +2,7 @@
 
 // 수업 자료 작성/수정 폼 (교수 전용)
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { FileDropzone } from "@/components/file-dropzone";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { SubmitButton } from "@/components/submit-button";
@@ -10,6 +10,7 @@ import { Field, FormMessage, boxInputCls, btn, inputCls } from "@/components/ui"
 import { AUDIENCE_LABEL } from "@/lib/constants";
 import type { AttachmentDraft, CourseAudience, CourseMaterial } from "@/lib/types";
 import { saveCourseMaterial } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 export function CourseForm({
   mode,
@@ -28,11 +29,11 @@ export function CourseForm({
   defaults?: { semester?: string; course?: string };
   attachments: AttachmentDraft[];
 }) {
-  const [state, action] = useActionState(saveCourseMaterial, undefined);
+  const [state, onSubmit, pending] = useFormAction(saveCourseMaterial);
   const [uploading, setUploading] = useState(false);
 
   return (
-    <form action={action} className="grid gap-10 lg:grid-cols-[1fr_20rem] lg:gap-14">
+    <form onSubmit={onSubmit} className="grid gap-10 lg:grid-cols-[1fr_20rem] lg:gap-14">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="mode" value={mode} />
 
@@ -130,7 +131,7 @@ export function CourseForm({
 
         <div className="flex flex-col gap-3 border-t border-ink pt-6">
           <FormMessage state={state} />
-          <SubmitButton disabled={uploading} pendingText="저장 중…" className="w-full">
+          <SubmitButton pending={pending} disabled={uploading} pendingText="저장 중…" className="w-full">
             {uploading ? "파일 업로드 중…" : mode === "new" ? "수업 자료 등록" : "수정 내용 저장"}
           </SubmitButton>
           <Link href={mode === "new" ? "/courses" : `/courses/${id}`} className={`${btn.ghost} w-full`}>

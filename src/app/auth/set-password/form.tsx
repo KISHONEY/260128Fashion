@@ -1,14 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, FormMessage, inputCls } from "@/components/ui";
 import { setPassword } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 export function SetPasswordForm({ defaultName }: { defaultName: string }) {
-  const [state, action] = useActionState(setPassword, undefined);
+  const [state, onSubmit, pending] = useFormAction(setPassword);
   return (
-    <form action={action} className="flex flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex flex-col gap-6">
       <Field label="이름" htmlFor="name" required>
         <input id="name" name="name" required maxLength={40} defaultValue={defaultName} className={inputCls} />
       </Field>
@@ -19,7 +19,7 @@ export function SetPasswordForm({ defaultName }: { defaultName: string }) {
         <input id="password2" name="password2" type="password" minLength={8} required autoComplete="new-password" className={inputCls} />
       </Field>
       <FormMessage state={state} />
-      <SubmitButton className="w-full">저장하고 시작하기</SubmitButton>
+      <SubmitButton pending={pending} className="w-full">저장하고 시작하기</SubmitButton>
     </form>
   );
 }

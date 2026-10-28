@@ -1,14 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, FormMessage, inputCls } from "@/components/ui";
 import { signIn } from "./actions";
+import { useFormAction } from "@/lib/use-form-action";
 
 export function LoginForm({ next }: { next: string }) {
-  const [state, action] = useActionState(signIn, undefined);
+  const [state, onSubmit, pending] = useFormAction(signIn);
   return (
-    <form action={action} className="flex flex-col gap-7">
+    <form onSubmit={onSubmit} className="flex flex-col gap-7">
       <input type="hidden" name="next" value={next} />
       <Field label="이메일" htmlFor="email" required>
         <input id="email" name="email" type="email" autoComplete="email" required className={inputCls} />
@@ -24,7 +24,7 @@ export function LoginForm({ next }: { next: string }) {
         />
       </Field>
       <FormMessage state={state} />
-      <SubmitButton pendingText="로그인 중…" className="w-full">
+      <SubmitButton pending={pending} pendingText="로그인 중…" className="w-full">
         로그인
       </SubmitButton>
     </form>
