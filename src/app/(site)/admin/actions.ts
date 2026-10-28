@@ -2,14 +2,14 @@
 
 // 관리자(교수) 전용 서버 액션
 // - 모든 함수는 먼저 actionAdmin() 으로 교수인지 확인합니다.
-// - 일반 데이터 변경은 로그인 사용자 권한(RLS)으로,
-//   계정 생성/삭제·이메일 조회처럼 Auth 관리가 필요한 경우에만 Secret 키를 씁니다.
+// - 모든 데이터 변경은 로그인한 교수의 권한(RLS)으로 처리합니다.
+// - (선택) Secret 키가 설정된 경우에만 이메일 초대, 로그인 계정 완전 삭제가 추가로 동작합니다.
 import { randomInt } from "crypto";
 import { revalidatePath } from "next/cache";
 import { actionAdmin } from "@/lib/auth";
 import { BUCKET } from "@/lib/constants";
-import { siteUrl } from "@/lib/env";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { siteUrl } from "@/lib/site-url";
+import { createAdminClient, hasAdminKey } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionState, UserRole } from "@/lib/types";
 
@@ -43,22 +43,23 @@ export async function removeMember(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!UUID_RE.test(id) || id === me.id) return; // 본인은 삭제 불가
 
-  const admin = createAdminClient();
-  // 마지막 교수 계정은 삭제 불가
-  const { data: target } = await admin.from("profiles").select("role").eq("id", id).maybeSingle();
-  if (target?.role === "admin") {
-    const { count } = await admin.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin");
-    if ((count ?? 0) <= 1) return;
+  // 멤버 목록(프로필)에서 제거 → 즉시 모든 자료 접근이 막힙니다. (RLS: 교수만, 본인 제외)
+  // 알림은 함께 삭제되고, 작성한 댓글은 "탈퇴한 멤버"로 남습니다.
+  const supabase = await createClient();
+  const { data } = await supabase.from("profiles").delete().eq("id", id).select("id");
+
+  // (선택) Secret 키가 있으면 로그인 계정까지 완전히 삭제
+  if (data?.length && hasAdminKey()) {
+    await createAdminClient().auth.admin.deleteUser(id);
   }
-  // 계정 삭제 → 프로필·알림은 함께 삭제되고, 작성한 댓글은 "탈퇴한 멤버"로 남습니다.
-  await admin.auth.admin.deleteUser(id);
   revalidatePath("/admin");
 }
 
-// 이메일로 초대 (Supabase 이메일 설정 필요 — 설정 가이드 참고)
+// (선택) 이메일로 초대 — Secret 키와 Supabase 이메일(SMTP) 설정이 있을 때만
 export async function inviteByEmail(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const me = await actionAdmin();
   if ("error" in me) return me;
+  if (!hasAdminKey()) return { error: "이메일 초대는 추가 설정이 필요합니다. 초대 코드를 이용해 주세요." };
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const name = String(formData.get("name") ?? "").trim();
   const role = String(formData.get("role") ?? "member") as UserRole;
@@ -66,19 +67,27 @@ export async function inviteByEmail(_prev: ActionState, formData: FormData): Pro
   if (name.length > 40) return { error: "이름은 40자 이내로 입력해 주세요." };
   if (!ROLES.includes(role)) return { error: "잘못된 권한입니다." };
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { display_name: name || email.split("@")[0] },
-    redirectTo: `${siteUrl()}/auth/confirm`,
+  // 이 초대 전용 1회용 코드를 만들어 함께 보냄 (DB 가입 관문 통과용)
+  const supabase = await createClient();
+  const code = makeCode();
+  const { error: codeError } = await supabase.from("invite_codes").insert({
+    code, role, max_uses: 1, expires_at: new Date(Date.now() + 7 * 86400_000).toISOString(),
+    note: `이메일 초대: ${email}`.slice(0, 100), created_by: me.id,
   });
-  if (error || !data.user) {
-    const msg = error?.message.toLowerCase() ?? "";
+  if (codeError) return { error: "초대를 준비하지 못했습니다." };
+
+  const { error } = await createAdminClient().auth.admin.inviteUserByEmail(email, {
+    data: { display_name: name || email.split("@")[0], invite_code: code },
+    redirectTo: `${await siteUrl()}/auth/confirm`,
+  });
+  if (error) {
+    await supabase.from("invite_codes").delete().eq("code", code);
+    const msg = error.message.toLowerCase();
     if (msg.includes("already")) return { error: "이미 가입되었거나 초대된 이메일입니다." };
     if (msg.includes("rate")) return { error: "짧은 시간에 너무 많은 메일을 보냈습니다. 잠시 후 다시 시도하거나 초대 코드를 이용하세요." };
     console.error("invite", error);
     return { error: "초대 메일을 보내지 못했습니다. Supabase 이메일(SMTP) 설정을 확인하거나, 초대 코드를 이용하세요." };
   }
-  if (role === "admin") await admin.from("profiles").update({ role: "admin" }).eq("id", data.user.id);
   revalidatePath("/admin");
   return { success: `${email} 로 초대 메일을 보냈습니다.` };
 }

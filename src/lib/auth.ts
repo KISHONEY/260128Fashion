@@ -9,11 +9,16 @@ import type { Profile } from "@/lib/types";
 export type CurrentUser = Profile & { email: string };
 
 // 한 번의 요청 안에서는 결과를 재사용합니다 (React cache)
-export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+const getClaims = cache(async () => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
-  const claims = data?.claims;
+  return data?.claims ?? null;
+});
+
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  const claims = await getClaims();
   if (!claims?.sub) return null;
+  const supabase = await createClient();
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -26,9 +31,13 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 });
 
 // 로그인 필수 — 아니면 로그인 화면으로
+// (로그인은 되어 있지만 프로필이 없는 = 제거된 멤버는 안내 화면으로)
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) {
+    const claims = await getClaims();
+    redirect(claims?.sub ? "/auth/no-access" : "/login");
+  }
   return user;
 }
 

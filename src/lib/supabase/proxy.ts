@@ -2,7 +2,7 @@
 // 로그인 페이지로 보내는 함수. src/proxy.ts 에서 호출합니다.
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/lib/env";
+import { NOT_CONFIGURED_MESSAGE, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, isConfigured } from "@/lib/env";
 
 // 로그인 없이 접근할 수 있는 경로 (이 외에는 전부 로그인 필요)
 const PUBLIC_PATHS = ["/login", "/join", "/auth/confirm", "/auth/error"];
@@ -11,7 +11,18 @@ function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
+// 설정 전 안내 화면
+function setupNeeded() {
+  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>설정 필요</title><body style="font-family:sans-serif;background:#f7f5f0;color:#171614;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px">
+<div style="max-width:32rem;line-height:1.7"><h1 style="font-weight:400">설정이 필요합니다</h1><p>${NOT_CONFIGURED_MESSAGE}</p>
+<p style="color:#6d6860;font-size:14px">자세한 방법은 docs/01-설정-가이드.md 를 참고하세요.</p></div></body></html>`;
+  return new NextResponse(html, { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
 export async function updateSession(request: NextRequest) {
+  if (!isConfigured()) return setupNeeded();
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

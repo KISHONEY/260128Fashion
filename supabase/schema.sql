@@ -11,7 +11,7 @@
 --   4. 트리거 (프로필 자동 생성, 수정 시각, 댓글 규칙, 알림 생성)
 --   5. Row Level Security 정책  ← 모든 권한 검증은 여기서 이뤄집니다
 --   6. Storage 버킷 + 파일 접근 정책
---   7. 초기 데이터 (카테고리 예시, 교수 소개 빈 행)
+--   7. 초기 데이터 (카테고리 예시, 교수 소개 빈 행, 최초 교수 가입 코드)
 -- =====================================================================
 
 
@@ -215,6 +215,12 @@ create table if not exists public.invite_codes (
   created_at  timestamptz not null default now()
 );
 
+-- 멤버 이메일 (교수 관리 화면 전용 — 다른 학생에게는 보이지 않음)
+create table if not exists public.member_emails (
+  id     uuid primary key references public.profiles (id) on delete cascade,
+  email  text not null default ''
+);
+
 
 -- ---------------------------------------------------------------------
 -- 3. 권한 확인용 함수
@@ -261,32 +267,21 @@ returns boolean language sql stable security definer set search_path = '' as $$
       and (c.course_material_id is null or public.can_view_course(c.course_material_id)));
 $$;
 
--- 초대 코드 사용 (서버에서 service_role 키로만 호출)
--- 유효하면 사용 횟수를 1 올리고 부여할 역할을 돌려줍니다. 유효하지 않으면 null.
-create or replace function public.claim_invite_code(p_code text)
-returns public.user_role language plpgsql security definer set search_path = '' as $$
-declare
-  v_role public.user_role;
-begin
-  update public.invite_codes
-     set use_count = use_count + 1
-   where code = p_code
-     and use_count < max_uses
-     and (expires_at is null or expires_at > now())
-  returning role into v_role;
-  return v_role;
-end $$;
+-- (예전 버전에서 쓰던 함수 정리)
+drop function if exists public.claim_invite_code(text);
+drop function if exists public.release_invite_code(text);
 
--- 가입 실패 시 초대 코드 사용 횟수 되돌리기 (service_role 전용)
-create or replace function public.release_invite_code(p_code text)
-returns void language sql security definer set search_path = '' as $$
-  update public.invite_codes set use_count = greatest(use_count - 1, 0) where code = p_code;
+-- 가입 화면에서 초대 코드가 유효한지 미리 확인 (사용 처리는 하지 않음)
+-- 로그인 전 사용자도 호출할 수 있지만 "유효/무효" 외에는 아무것도 알려 주지 않습니다.
+create or replace function public.check_invite_code(p_code text)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.invite_codes
+    where code = upper(trim(p_code))
+      and use_count < max_uses
+      and (expires_at is null or expires_at > now()));
 $$;
-
-revoke execute on function public.claim_invite_code(text) from public, anon, authenticated;
-revoke execute on function public.release_invite_code(text) from public, anon, authenticated;
-grant execute on function public.claim_invite_code(text) to service_role;
-grant execute on function public.release_invite_code(text) to service_role;
+grant execute on function public.check_invite_code(text) to anon, authenticated;
 
 -- 서버(service_role 키)나 SQL 편집기에서 실행 중인가?
 -- (security definer 함수 안에서는 current_user 가 함수 소유자로 바뀌므로
@@ -301,25 +296,64 @@ $$;
 -- 4. 트리거
 -- ---------------------------------------------------------------------
 
--- (1) 새 계정이 만들어지면 프로필 자동 생성
---     ★ 사이트의 "첫 번째" 계정은 자동으로 교수(admin)가 됩니다.
+-- (1) 가입 관문: 유효한 초대 코드가 없으면 계정 생성 자체를 거부
+--     공개 회원가입 API 를 직접 호출해도 이 트리거가 막습니다.
+--     코드는 사용 횟수를 1 올리고, 코드에 지정된 역할을 기록해 둡니다.
+create or replace function public.gate_new_user()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_code text;
+  v_role public.user_role;
+begin
+  -- 사용자가 보낸 역할 값은 절대 믿지 않음 (항상 지우고 아래에서 다시 기록)
+  new.raw_user_meta_data := coalesce(new.raw_user_meta_data, '{}'::jsonb) - 'invited_role';
+  v_code := upper(trim(coalesce(new.raw_user_meta_data ->> 'invite_code', '')));
+  new.raw_user_meta_data := new.raw_user_meta_data - 'invite_code';
+
+  if v_code = '' then
+    raise exception '초대 코드가 필요합니다.';
+  end if;
+
+  update public.invite_codes
+     set use_count = use_count + 1
+   where code = v_code
+     and use_count < max_uses
+     and (expires_at is null or expires_at > now())
+  returning role into v_role;
+
+  if v_role is null then
+    raise exception '유효하지 않거나 만료된 초대 코드입니다.';
+  end if;
+
+  new.raw_user_meta_data := new.raw_user_meta_data || jsonb_build_object('invited_role', v_role);
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_gate on auth.users;
+create trigger on_auth_user_gate
+  before insert on auth.users
+  for each row execute function public.gate_new_user();
+
+-- (1-2) 계정이 만들어지면 프로필 + 이메일 기록 자동 생성
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare
   v_name text;
+  v_role public.user_role := 'member';
 begin
   v_name := nullif(trim(coalesce(new.raw_user_meta_data ->> 'display_name', '')), '');
   if v_name is null then
     v_name := split_part(coalesce(new.email, '회원'), '@', 1);
   end if;
+  if (new.raw_user_meta_data ->> 'invited_role') = 'admin' then
+    v_role := 'admin';
+  end if;
   insert into public.profiles (id, display_name, role)
-  values (
-    new.id,
-    left(v_name, 40),
-    case when exists (select 1 from public.profiles where role = 'admin')
-         then 'member'::public.user_role else 'admin'::public.user_role end
-  )
+  values (new.id, left(v_name, 40), v_role)
   on conflict (id) do nothing;
+  insert into public.member_emails (id, email)
+  values (new.id, coalesce(new.email, ''))
+  on conflict (id) do update set email = excluded.email;
   return new;
 end $$;
 
@@ -327,6 +361,19 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- (1-3) 이메일을 바꾸면 기록도 갱신
+create or replace function public.sync_member_email()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  update public.member_emails set email = coalesce(new.email, '') where id = new.id;
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_email on auth.users;
+create trigger on_auth_user_email
+  after update of email on auth.users
+  for each row execute function public.sync_member_email();
 
 -- (2) 프로필 보호: 역할(role)은 교수만 바꿀 수 있고, 마지막 교수는 강등 불가
 create or replace function public.protect_profile()
@@ -556,6 +603,7 @@ alter table public.attachments       enable row level security;
 alter table public.mentions          enable row level security;
 alter table public.notifications     enable row level security;
 alter table public.invite_codes      enable row level security;
+alter table public.member_emails     enable row level security;
 
 -- profiles: 멤버끼리 이름은 서로 볼 수 있음(멘션용). 본인 또는 교수만 수정.
 drop policy if exists "profiles_select" on public.profiles;
@@ -565,7 +613,15 @@ drop policy if exists "profiles_update" on public.profiles;
 create policy "profiles_update" on public.profiles for update to authenticated
   using (id = auth.uid() or public.is_admin())
   with check (id = auth.uid() or public.is_admin());
--- (insert 는 트리거가, delete 는 서버의 계정 삭제가 담당하므로 정책 없음)
+-- 멤버 제거: 교수만, 본인은 제외 (insert 는 트리거가 담당)
+drop policy if exists "profiles_delete" on public.profiles;
+create policy "profiles_delete" on public.profiles for delete to authenticated
+  using (public.is_admin() and id <> auth.uid());
+
+-- member_emails: 교수와 본인만 열람
+drop policy if exists "member_emails_select" on public.member_emails;
+create policy "member_emails_select" on public.member_emails for select to authenticated
+  using (public.is_admin() or id = auth.uid());
 
 -- site_settings: 멤버 열람, 교수 수정
 drop policy if exists "site_settings_select" on public.site_settings;
@@ -793,4 +849,23 @@ insert into public.categories (name, sort_order) values
   ('패션 문화사', 5)
 on conflict (name) do nothing;
 
--- 끝. "Success. No rows returned" 가 보이면 완료입니다.
+-- 예전 버전으로 이미 가입한 멤버의 이메일 채우기
+insert into public.member_emails (id, email)
+select p.id, coalesce(u.email, '') from public.profiles p join auth.users u on u.id = p.id
+on conflict (id) do nothing;
+
+-- ★ 최초 교수 가입 코드
+--   교수(관리자) 계정이 아직 없으면 1회용 관리자 초대 코드를 만듭니다.
+--   이 SQL 을 실행한 결과 화면(아래 Results)에 보이는 코드로 /join 화면에서 가입하세요.
+insert into public.invite_codes (code, role, max_uses, note)
+select upper(substr(md5(gen_random_uuid()::text), 1, 10)), 'admin', 1, '최초 교수 계정'
+where not exists (select 1 from public.profiles where role = 'admin')
+  and not exists (select 1 from public.invite_codes
+                  where note = '최초 교수 계정' and use_count < max_uses);
+
+-- 끝. 결과 화면에 "최초 교수 가입 코드" 가 보이면 그 코드를 메모하세요.
+--     (교수 계정이 이미 있으면 결과가 비어 있는 것이 정상입니다)
+select code as "최초 교수 가입 코드"
+from public.invite_codes
+where note = '최초 교수 계정' and use_count < max_uses
+  and not exists (select 1 from public.profiles where role = 'admin');

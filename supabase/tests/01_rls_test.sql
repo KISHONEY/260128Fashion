@@ -1,11 +1,17 @@
 -- RLS 동작 검증 (로컬 PostgreSQL + 00_supabase_stub.sql 환경 전용)
 \set ON_ERROR_STOP 1
--- 계정 3개: 첫 번째 = 교수(자동 admin), 나머지 = 학생
+-- 계정 3개: 교수는 schema.sql 이 만든 "최초 교수 가입 코드", 학생은 일반 초대 코드로 가입
+insert into public.invite_codes (code, role, max_uses) values ('STUDENT1', 'member', 2);
+insert into auth.users (id, email, raw_user_meta_data)
+select '00000000-0000-0000-0000-00000000000a', 'prof@example.com',
+       jsonb_build_object('display_name', '김교수', 'invite_code', lower(code))
+from public.invite_codes where note = '최초 교수 계정';
 insert into auth.users (id, email, raw_user_meta_data) values
-  ('00000000-0000-0000-0000-00000000000a', 'prof@example.com', '{"display_name":"김교수"}'),
-  ('00000000-0000-0000-0000-00000000000b', 'stu1@example.com', '{"display_name":"이학생"}'),
-  ('00000000-0000-0000-0000-00000000000c', 'stu2@example.com', '{}');
+  ('00000000-0000-0000-0000-00000000000b', 'stu1@example.com', '{"display_name":"이학생","invite_code":"STUDENT1","invited_role":"admin"}'),
+  ('00000000-0000-0000-0000-00000000000c', 'stu2@example.com', '{"invite_code":"student1"}');
 select display_name, role from public.profiles order by display_name;
+select 'emails recorded (expect 3)', count(*) from public.member_emails;
+select 'invite code stripped from metadata (expect 0)', count(*) from auth.users where raw_user_meta_data ? 'invite_code';
 
 create or replace function pg_temp.as_user(u text) returns void language plpgsql as $$
 begin
@@ -97,22 +103,35 @@ select 'student1 notifications (reply expected)', type, link from public.notific
 select 'student1 sees other notifications? (expect 0)', count(*) from public.notifications where user_id <> auth.uid();
 commit;
 
--- 6) 초대 코드: 클라이언트(authenticated)는 호출 불가, service_role 만 가능
-insert into public.invite_codes (code, max_uses) values ('ABC12345', 1);
-begin;
-select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
-select pg_temp.expect_error($q$select public.claim_invite_code('ABC12345')$q$, 'authenticated cannot claim invite');
-rollback;
-begin;
-set local role service_role;
-set local request.jwt.claim.role = 'service_role';
-select 'claim 1 (member)', public.claim_invite_code('ABC12345');
-select 'claim 2 (null)', public.claim_invite_code('ABC12345');
-commit;
-
 -- 7) 마지막 관리자 강등 방지
 begin;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select pg_temp.expect_error($q$update public.profiles set role='member' where id = auth.uid()$q$, 'last admin cannot be demoted');
+rollback;
+-- 8) 가입 관문: 코드 없음 / 다 쓴 코드 / 틀린 코드 → 거부
+select pg_temp.expect_error($q$insert into auth.users (email, raw_user_meta_data) values ('x@x.com', '{}')$q$, 'signup without code rejected');
+select pg_temp.expect_error($q$insert into auth.users (email, raw_user_meta_data) values ('x@x.com', '{"invite_code":"STUDENT1"}')$q$, 'used-up code rejected');
+select pg_temp.expect_error($q$insert into auth.users (email, raw_user_meta_data) values ('x@x.com', '{"invite_code":"NOPE"}')$q$, 'wrong code rejected');
+begin;
+set local role anon;
+set local request.jwt.claim.role = 'anon';
+select 'anon check valid code (expect f, used up)', public.check_invite_code('student1');
+select 'anon cannot read emails (expect 0)', count(*) from public.member_emails;
+rollback;
+
+-- 9) 학생은 이메일 목록을 볼 수 없고(본인 것만), 교수는 멤버를 제거할 수 있음
+begin;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select 'student sees own email only (expect 1)', count(*) from public.member_emails;
+with d as (delete from public.profiles where id = '00000000-0000-0000-0000-00000000000c' returning 1)
+select 'student cannot remove member (expect 0)', count(*) from d;
+rollback;
+begin;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select 'admin sees all emails (expect 3)', count(*) from public.member_emails;
+with d as (delete from public.profiles where id = auth.uid() returning 1)
+select 'admin cannot remove self (expect 0)', count(*) from d;
+with d as (delete from public.profiles where id = '00000000-0000-0000-0000-00000000000c' returning 1)
+select 'admin removes member (expect 1)', count(*) from d;
 rollback;
 select 'ALL TESTS DONE';

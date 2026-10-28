@@ -3,9 +3,9 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { Badge } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/constants";
-import { siteUrl } from "@/lib/env";
 import { formatDate } from "@/lib/format";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { siteUrl } from "@/lib/site-url";
+import { hasAdminKey } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { InviteCode, Profile } from "@/lib/types";
 import { deleteInviteCode, removeMember } from "./actions";
@@ -20,26 +20,15 @@ function isExpired(expiresAt: string | null) {
 export default async function AdminMembersPage() {
   const me = await requireAdmin();
   const supabase = await createClient();
-  const [{ data: profiles }, { data: codes }] = await Promise.all([
+  const [{ data: profiles }, { data: codes }, { data: emailRows }] = await Promise.all([
     supabase.from("profiles").select("*").order("role").order("created_at"),
     supabase.from("invite_codes").select("*").order("created_at", { ascending: false }),
+    // 이메일은 교수만 볼 수 있는 별도 표에 있습니다 (RLS)
+    supabase.from("member_emails").select("id, email"),
   ]);
-
-  // 이메일은 Supabase Auth 에만 있으므로 Secret 키로 조회 (교수 화면에서만)
-  const emails = new Map<string, { email: string; lastSignIn: string | null; pending: boolean }>();
-  try {
-    const admin = createAdminClient();
-    const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
-    data.users.forEach((u) =>
-      emails.set(u.id, {
-        email: u.email ?? "",
-        lastSignIn: u.last_sign_in_at ?? null,
-        pending: Boolean(u.invited_at && !u.last_sign_in_at),
-      }),
-    );
-  } catch (e) {
-    console.error("listUsers", e);
-  }
+  const emails = new Map((emailRows ?? []).map((r) => [r.id as string, r.email as string]));
+  const base = await siteUrl();
+  const emailInviteEnabled = hasAdminKey();
 
   const members = (profiles ?? []) as Profile[];
   const inviteCodes = (codes ?? []) as InviteCode[];
@@ -66,20 +55,15 @@ export default async function AdminMembersPage() {
             </thead>
             <tbody>
               {members.map((m) => {
-                const info = emails.get(m.id);
+                const email = emails.get(m.id);
                 const isMe = m.id === me.id;
                 return (
                   <tr key={m.id} className="border-b border-line">
                     <td className="py-3 pr-4">
                       {m.display_name}
                       {isMe && <span className="ml-2 text-xs text-muted">(나)</span>}
-                      {info?.pending && (
-                        <span className="ml-2">
-                          <Badge tone="accent">초대 수락 대기</Badge>
-                        </span>
-                      )}
                     </td>
-                    <td className="py-3 pr-4 text-muted">{info?.email ?? "—"}</td>
+                    <td className="py-3 pr-4 text-muted">{email || "—"}</td>
                     <td className="py-3 pr-4 text-muted whitespace-nowrap">{formatDate(m.created_at)}</td>
                     <td className="py-3 pr-4">
                       <RoleForm id={m.id} role={m.role} disabled={isMe} />
@@ -89,7 +73,7 @@ export default async function AdminMembersPage() {
                         <form action={removeMember}>
                           <input type="hidden" name="id" value={m.id} />
                           <ConfirmButton
-                            message={`${m.display_name} 님을 멤버에서 제거할까요? 계정이 삭제되며, 작성한 댓글은 '탈퇴한 멤버'로 남습니다.`}
+                            message={`${m.display_name} 님을 멤버에서 제거할까요? 더 이상 사이트에 접근할 수 없으며, 작성한 댓글은 '탈퇴한 멤버'로 남습니다.`}
                           >
                             제거
                           </ConfirmButton>
@@ -125,7 +109,7 @@ export default async function AdminMembersPage() {
               {inviteCodes.map((c) => {
                 const expired = isExpired(c.expires_at);
                 const used = c.use_count >= c.max_uses;
-                const link = `${siteUrl()}/join?code=${c.code}`;
+                const link = `${base}/join?code=${c.code}`;
                 return (
                   <li key={c.id} className="border-b border-line py-4">
                     <div className="flex flex-wrap items-center gap-3">
@@ -155,16 +139,18 @@ export default async function AdminMembersPage() {
         </div>
       </section>
 
-      <section aria-labelledby="email-title" className="max-w-2xl">
-        <h2 id="email-title" className="font-serif text-3xl mb-2">
-          이메일로 초대
-        </h2>
-        <p className="text-sm text-muted mb-8 leading-relaxed">
-          입력한 주소로 초대 메일이 발송되고, 학생은 메일의 링크를 눌러 비밀번호를 정합니다. Supabase 의 이메일(SMTP)
-          설정이 필요합니다 — 설정 가이드의 “이메일 초대 설정”을 참고하세요.
-        </p>
-        <InviteEmailForm />
-      </section>
+      {emailInviteEnabled && (
+        <section aria-labelledby="email-title" className="max-w-2xl">
+          <h2 id="email-title" className="font-serif text-3xl mb-2">
+            이메일로 초대
+          </h2>
+          <p className="text-sm text-muted mb-8 leading-relaxed">
+            입력한 주소로 초대 메일이 발송되고, 학생은 메일의 링크를 눌러 비밀번호를 정합니다. Supabase 의 이메일(SMTP)
+            설정이 필요합니다 — 설정 가이드의 “선택 기능”을 참고하세요.
+          </p>
+          <InviteEmailForm />
+        </section>
+      )}
     </div>
   );
 }
